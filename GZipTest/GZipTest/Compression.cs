@@ -88,10 +88,9 @@ namespace GZipTest
                 {
                     gz.Write(InputData[n], 0, InputData[n].Length);
                 }
-                    //stream.CopyTo(gz);
 
                 OutputData[n] = bufstream.ToArray();
-                BitConverter.GetBytes(OutputData[n].Length).CopyTo(OutputData[n], OutputData[n].Length - 5);
+                BitConverter.GetBytes(OutputData[n].Length).CopyTo(OutputData[n], 4);
                 //byte[] len = BitConverter.GetBytes(OutputData[n].Length);
 
                 //    using (MemoryStream s = new MemoryStream(len.Length + OutputData[n].Length))

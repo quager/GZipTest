@@ -17,9 +17,6 @@ namespace GZipTest
         public long CurrentSize { get; protected set; }
         public long FileSize { get; protected set; }
 
-        public delegate void ShowMessage(string message, bool ask = false);
-        public event ShowMessage OnShowMessage;
-
         public GZip(string input, string output)
         {
             Input = input;
@@ -30,6 +27,7 @@ namespace GZipTest
 
         public byte[] StreamToArray(Stream stream)
         {
+            stream.Position = 0;
             byte[] array = new byte[stream.Length];
             stream.Read(array, 0, array.Length);
             return array;

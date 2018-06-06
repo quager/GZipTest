@@ -1,9 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.IO;
 using System.IO.Compression;
-using System.Linq;
-using System.Text;
 using System.Threading;
 
 namespace GZipTest
@@ -11,7 +8,7 @@ namespace GZipTest
     class Decompression : GZip
     {
         public Decompression(string input, string output) : base(input, output) { }
-
+                
         public override void Process()
         {
             System.Diagnostics.Stopwatch startTime = System.Diagnostics.Stopwatch.StartNew();
@@ -34,9 +31,9 @@ namespace GZipTest
 
                         for (int n = 0; n < ThreadCount; n++)
                         {
-                            if (InputStream.Length - InputStream.Position >= BlockSize) size = BlockSize;
-                            else size = (int)(InputStream.Length - InputStream.Position);
-
+                            byte[] header = new byte[8];
+                            InputStream.Read(header, 0, header.Length);
+                            size = BitConverter.ToInt32(header, 4);
                             if (size == 0)
                             {
                                 done = true;
@@ -44,7 +41,8 @@ namespace GZipTest
                             }
 
                             InputData[n] = new byte[size];
-                            InputStream.Read(InputData[n], 0, size);
+                            header.CopyTo(InputData[n], 0);
+                            InputStream.Read(InputData[n], 8, size - 8);
 
                             Pool[n] = new Thread(DecompressBlock);
                             Pool[n].Start(n);
@@ -82,29 +80,25 @@ namespace GZipTest
         public void DecompressBlock(object i)
         {
             int n = (int)i;
-            MemoryStream bufstream = new MemoryStream();
             MemoryStream stream = new MemoryStream(InputData[n]);
 
             try
             {
-                using (GZipStream gz = new GZipStream(bufstream, CompressionMode.Decompress))
+                using (GZipStream gz = new GZipStream(stream, CompressionMode.Decompress))
                 {
-                    gz.Write(InputData[n], 0, InputData[n].Length);
+                    int count = 0;
+                    byte[] buf = new byte[4096];
+
+                    using (MemoryStream s = new MemoryStream())
+                    {
+                        while ((count = gz.Read(buf, 0, buf.Length)) > 0)
+                        {
+                            s.Write(buf, 0, count);
+                        }
+
+                        OutputData[n] = StreamToArray(s);
+                    }
                 }
-                //stream.CopyTo(gz);
-
-                OutputData[n] = bufstream.ToArray();
-                BitConverter.GetBytes(OutputData[n].Length).CopyTo(OutputData[n], OutputData[n].Length - 5);
-                //byte[] len = BitConverter.GetBytes(OutputData[n].Length);
-
-                //    using (MemoryStream s = new MemoryStream(len.Length + OutputData[n].Length))
-                //    {
-                //        s.Write(len, 0, len.Length);
-                //        s.Write(OutputData[n], 0, OutputData[n].Length);
-                //        s.Position = 0;
-                //        OutputData[n] = new byte[s.Length];
-                //        s.Read(OutputData[n], 0, OutputData[n].Length);
-                //    }
             }
             catch (Exception ex)
             {
@@ -113,7 +107,6 @@ namespace GZipTest
             finally
             {
                 stream.Close();
-                bufstream.Close();
             }
 
             if (FileSize == 0) return;

@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text;
+﻿using System.IO;
 
 namespace GZipTest
 {
@@ -10,28 +6,28 @@ namespace GZipTest
     {
         static void Main(string[] args)
         {
-            Display d = new Display();
-            if (args.Length < 2) d.ShowMessage("Not All Parameters are Specified!");
+            if (args.Length < 2) Display.ShowMessage("Not All Parameters are Specified!");
 
             string Mode = "compress";
 
             if (args[0].ToLower().Equals("decompress")) Mode = "decompress";
-            else if (!args[0].ToLower().Equals("compress")) d.ShowMessage("Operation Not Specified!");
+            else if (!args[0].ToLower().Equals("compress")) Display.ShowMessage("Operation Not Specified!");
 
             char[] wrong = { '/', ':', '?', '*', '<', '>', '|', '"' };
             string SrcFileName = args[1];
-            if (Path.GetFileName(SrcFileName).IndexOfAny(wrong) >= 0) d.ShowMessage("Wrong Source File Path!");
-            if (!File.Exists(SrcFileName)) d.ShowMessage("Source File Not Exists!");
+            if (Path.GetFileName(SrcFileName).IndexOfAny(wrong) >= 0) Display.ShowMessage("Wrong Source File Path!");
+            if (!File.Exists(SrcFileName)) Display.ShowMessage("Source File Not Exists!");
             string DstFileName = args[2];
-            if (Path.GetFileName(DstFileName).IndexOfAny(wrong) >= 0) d.ShowMessage("Wrong Destination File Path!");
+            if (Path.GetFileName(DstFileName).IndexOfAny(wrong) >= 0) Display.ShowMessage("Wrong Destination File Path!");
             if (File.Exists(DstFileName))
             {
-                d.ShowMessage("Destination File Exists!\r\nDo You Want to Overwrite it? (y/n): ", true);
+                Display.ShowMessage("Destination File Exists!\r\nDo You Want to Overwrite it? (y/n): ", true);
                 File.Delete(DstFileName);
             }
 
-            GZip gz = new GZip(SrcFileName, DstFileName, Mode);
-            gz.OnShowMessage += d.ShowMessage;
+            GZip gz = null;
+            if (Mode.Equals("compress")) gz = new Compression(SrcFileName, DstFileName);
+            else gz = new Decompression(SrcFileName, DstFileName);
             gz.Process();
         }
     }
