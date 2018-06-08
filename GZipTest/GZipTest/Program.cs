@@ -14,11 +14,20 @@ namespace GZipTest
             else if (!args[0].ToLower().Equals("compress")) Display.ShowMessage("Operation Not Specified!");
 
             char[] wrong = { '/', ':', '?', '*', '<', '>', '|', '"' };
+
             string SrcFileName = args[1];
-            if (Path.GetFileName(SrcFileName).IndexOfAny(wrong) >= 0) Display.ShowMessage("Wrong Source File Path!");
-            if (!File.Exists(SrcFileName)) Display.ShowMessage("Source File Not Exists!");
+
+            if (Path.GetFileName(SrcFileName).IndexOfAny(wrong) >= 0)
+                Display.ShowMessage("Wrong Source File Path!");
+
+            if (!File.Exists(SrcFileName))
+                Display.ShowMessage("Source File Not Exists!");
+
             string DstFileName = args[2];
-            if (Path.GetFileName(DstFileName).IndexOfAny(wrong) >= 0) Display.ShowMessage("Wrong Destination File Path!");
+
+            if (!Directory.Exists(Path.GetDirectoryName(DstFileName)) || Path.GetFileName(DstFileName).IndexOfAny(wrong) >= 0)
+                Display.ShowMessage("Wrong Destination File Path!");
+
             if (File.Exists(DstFileName))
             {
                 Display.ShowMessage("Destination File Exists!\r\nDo You Want to Overwrite it? (y/n): ", true);
