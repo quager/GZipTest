@@ -8,21 +8,23 @@ namespace GZipTest
     {
         public Decompression(string input, string output) : base(input, output) { }
                 
-        protected override int ReadBlock(int n)
+        protected override byte[] ReadBlock(int n)
         {
-            if (InputStream == null) return -1;
+            if (InputStream == null) return null;
 
+            byte[] Block = null;
             int size = 0;
             byte[] header = new byte[8];
             InputStream.Read(header, 0, header.Length);
             size = BitConverter.ToInt32(header, 4);
-            if (size == 0) return 1;
 
-            InputData[n] = new byte[size];
-            header.CopyTo(InputData[n], 0);
-            InputStream.Read(InputData[n], 8, size - 8);
+            if (size == 0) return null;
 
-            return 0;
+            Block = new byte[size];
+            header.CopyTo(Block, 0);
+            InputStream.Read(Block, 8, size - 8);
+
+            return Block;
         }
 
         protected override void SpecifiedProcessBlock(int n)
@@ -31,7 +33,7 @@ namespace GZipTest
 
             try
             {
-                lock (Locker)
+                lock (OutLocker)
                 {
                     using (GZipStream gz = new GZipStream(stream, CompressionMode.Decompress))
                     {
@@ -49,10 +51,6 @@ namespace GZipTest
                         }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                Display.ShowMessage(ex.ToString());
             }
             finally
             {
