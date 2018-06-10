@@ -12,8 +12,8 @@ namespace GZipTest
         protected static int MaxBlocks = 100;
         protected const int BlockSize = 10000000;
         protected static int ThreadCount = Environment.ProcessorCount;
-        protected byte[][] OutputData = null;// new byte[ThreadCount][];
-        protected byte[][] InputData = new byte[ThreadCount][];
+        protected byte[][] OutputData = null;
+        protected byte[][] InputData = null;
         protected Queue<byte[][]> InputQueue = new Queue<byte[][]>();
         protected Queue<byte[][]> OutputQueue = new Queue<byte[][]>();
         protected FileStream InputStream = null;
@@ -26,8 +26,7 @@ namespace GZipTest
         protected AutoResetEvent[] Processed = new AutoResetEvent[ThreadCount];
         protected AutoResetEvent InputReady = new AutoResetEvent(false);
         protected Semaphore ResetIn = null;
-        protected Thread[] Pool = new Thread[ThreadCount];
-        protected Thread TReader, TDistributor, TWriter;
+        protected Thread TReader, PoolManager, TWriter;
         protected Stopwatch startTime = null;
         protected int CurrentBlock = 0;
 
@@ -43,7 +42,7 @@ namespace GZipTest
             OutputPath = output;
             OnFatalException += GZip_OnFatalException;
             PerformanceCounter ramCounter = new PerformanceCounter("Memory", "Available MBytes");
-            int blocks = (int)(ramCounter.NextValue() * 500000 / BlockSize / ThreadCount);
+            int blocks = (int)(ramCounter.NextValue() * 200000 / BlockSize / ThreadCount);
             if (blocks < MaxBlocks) MaxBlocks = blocks;
             ResetIn = new Semaphore(MaxBlocks, MaxBlocks);
         }
@@ -59,19 +58,13 @@ namespace GZipTest
                 TReader.Join();
             }
 
-            if (TDistributor.IsAlive)
+            if (PoolManager.IsAlive)
             {
                 InputReady.Set();
-                TDistributor.Join();
+                PoolManager.Join();
             }
 
-            if (TWriter.IsAlive)
-            {
-                for (int i = 0; i < ThreadCount; i++)
-                    Processed[i].Set();
-
-                TWriter.Join();
-            }
+            if (TWriter.IsAlive) TWriter.Join();
         }
 
         private void GZip_OnFatalException(Exception ex)
@@ -95,14 +88,13 @@ namespace GZipTest
             {
                 ProcessingReady[n] = new AutoResetEvent(false);
                 Processed[n] = new AutoResetEvent(false);
-                Pool[n] = new Thread(ProcessBlock);
-                Pool[n].Start(n);
+                new Thread(ProcessBlock).Start(n);
             }
             
             TReader = new Thread(Reader);
             TReader.Start();
-            TDistributor = new Thread(PoolManage);
-            TDistributor.Start();
+            PoolManager = new Thread(PoolManage);
+            PoolManager.Start();
             TWriter = new Thread(Writer);
             TWriter.Start();
         }
@@ -196,7 +188,7 @@ namespace GZipTest
 
         protected void Writer()
         {
-            byte[][] Block = new byte[ThreadCount][];
+            byte[][] Block = null;
 
             using (FileStream OutputStream = new FileStream(OutputPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
             {
@@ -257,6 +249,8 @@ namespace GZipTest
                             return;
                         }
                     }
+
+                    Block = null;
                 }
             }
 
@@ -313,8 +307,6 @@ namespace GZipTest
             for (int i = 0; i < ThreadCount; i++)
             {
                 ProcessingReady[i].Set();
-                //Monitor.PulseAll(OutputQueue);
-                Pool[i].Join();
             }
         }
 
