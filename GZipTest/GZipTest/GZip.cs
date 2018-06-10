@@ -6,7 +6,7 @@ using System.Threading;
 
 namespace GZipTest
 {
-    abstract class GZip : IDisposable
+    abstract class GZip
     {
         protected int BlocksNumber = 1;
         protected static int MaxBlocks = 100;
@@ -27,7 +27,7 @@ namespace GZipTest
         protected AutoResetEvent InputReady = new AutoResetEvent(false);
         protected Semaphore ResetIn = null;
         protected Thread TReader, PoolManager, TWriter;
-        protected Stopwatch startTime = null;
+        protected Stopwatch StartTime = null;
         protected int CurrentBlock = 0;
 
         protected delegate void FatalException(Exception ex);
@@ -47,41 +47,21 @@ namespace GZipTest
             ResetIn = new Semaphore(MaxBlocks, MaxBlocks);
         }
 
-        public void Dispose()
+        protected void GZip_OnFatalException(Exception ex)
         {
-            InWork = false;
-            JoinAll();
-
-            if (TReader.IsAlive)
-            {
-                ResetIn.Release();
-                TReader.Join();
-            }
-
-            if (PoolManager.IsAlive)
-            {
-                InputReady.Set();
-                PoolManager.Join();
-            }
-
-            if (TWriter.IsAlive) TWriter.Join();
-        }
-
-        private void GZip_OnFatalException(Exception ex)
-        {
-            Dispose();
-
             if (ex != null) Console.WriteLine(ex.ToString());
 
-            Console.WriteLine("\r\nInterrupted!");
-            ProcessCompleted();
+            Console.WriteLine("\r\nProcess Interrupted!");
+            InWork = false;
+            TWriter.Join();
+            ProcessEnded();
         }
 
         public void Process()
         {
             int blocks = ThreadCount;
 
-            startTime = Stopwatch.StartNew();
+            StartTime = Stopwatch.StartNew();
             Console.WriteLine("Processing Started.");
 
             for (int n = 0; n < ThreadCount; n++)
@@ -97,6 +77,12 @@ namespace GZipTest
             PoolManager.Start();
             TWriter = new Thread(Writer);
             TWriter.Start();
+            TWriter.Join();
+            if (!Displayed)
+            {
+                Console.WriteLine("Processing Completed!");
+                ProcessEnded();
+            }
         }
 
         protected void Reader()
@@ -109,7 +95,7 @@ namespace GZipTest
 
                 while (InputStream.Position < InputStream.Length)
                 {
-                    ResetIn.WaitOne();
+                    while (InWork && !ResetIn.WaitOne(100)) continue;
 
                     if (!InWork) break;
 
@@ -123,6 +109,7 @@ namespace GZipTest
                         {
                             Displayed = true;
                             OnFatalException?.Invoke(ex);
+                            return;
                         }
                     }
 
@@ -147,42 +134,51 @@ namespace GZipTest
 
         protected void PoolManage()
         {
-            while (InWork)
+            try
             {
-                if (IsReading) InputReady.WaitOne();
-
-                if (!InWork) break;
-
-                lock (InLocker)
+                while (InWork)
                 {
-                    while (InputQueue.Count == 0) Monitor.Wait(InLocker);
+                    while (IsReading && !InputReady.WaitOne(100)) continue;
 
-                    InputData = InputQueue.Dequeue();
-                }
+                    if (!InWork) break;
 
-                if (InputData == null)
-                {
+                    lock (InLocker)
+                    {
+                        while (InputQueue.Count == 0) Monitor.Wait(InLocker);
+
+                        InputData = InputQueue.Dequeue();
+                    }
+
+                    if (InputData == null)
+                    {
+                        lock (OutLocker)
+                        {
+                            OutputQueue.Enqueue(null);
+                            Monitor.PulseAll(OutLocker);
+                        }
+                        break;
+                    }
+
+                    ResetIn.Release();
+                    lock (OutLocker) OutputData = new byte[ThreadCount][];
+
+                    for (int i = 0; i < ThreadCount; i++)
+                        ProcessingReady[i].Set();
+
+                    while (InWork && !WaitHandle.WaitAll(Processed, 100)) continue;
+
                     lock (OutLocker)
                     {
-                        OutputQueue.Enqueue(null);
+                        if (!InWork) OutputData = null;
+                        OutputQueue.Enqueue(OutputData);
                         Monitor.PulseAll(OutLocker);
                     }
-                    break;
                 }
-
-                ResetIn.Release();
-                lock (OutLocker) OutputData = new byte[ThreadCount][];
-
-                for (int i = 0; i < ThreadCount; i++)
-                    ProcessingReady[i].Set();
-
-                WaitHandle.WaitAll(Processed);
-
-                lock (OutLocker)
-                {
-                    OutputQueue.Enqueue(OutputData);
-                    Monitor.PulseAll(OutLocker);
-                }
+            }
+            catch (Exception ex)
+            {
+                Displayed = true;
+                OnFatalException?.Invoke(ex);
             }
         }
 
@@ -204,7 +200,6 @@ namespace GZipTest
                     if (Block == null)
                     {
                         InWork = false;
-                        JoinAll();
                         break;
                     }
 
@@ -217,7 +212,6 @@ namespace GZipTest
                             if (Block[n] == null)
                             {
                                 InWork = false;
-                                JoinAll();
                                 break;
                             }
 
@@ -253,15 +247,12 @@ namespace GZipTest
                     Block = null;
                 }
             }
-
-            Console.WriteLine("Processing Completed!");
-            ProcessCompleted();
         }
 
-        protected void ProcessCompleted()
+        protected void ProcessEnded()
         {
-            startTime.Stop();
-            Display.ShowMessage(string.Format("Process Time = {0:F1}s.", startTime.Elapsed.TotalSeconds));
+            StartTime.Stop();
+            Display.ShowMessage(string.Format("Process Time = {0:F1}s.", StartTime.Elapsed.TotalSeconds));
         }
 
         protected void ProcessBlock(object i)
@@ -272,7 +263,7 @@ namespace GZipTest
             {
                 while (InWork)
                 {
-                    ProcessingReady[n].WaitOne();
+                    while (InWork && !ProcessingReady[n].WaitOne(100)) continue;
 
                     lock (InLocker)
                     {
@@ -288,8 +279,11 @@ namespace GZipTest
             }
             catch (Exception ex)
             {
-                Displayed = true;
-                OnFatalException?.Invoke(ex);
+                if (!Displayed)
+                {
+                    Displayed = true;
+                    OnFatalException?.Invoke(ex);
+                }
             }
             
             Processed[n].Set();
@@ -300,14 +294,6 @@ namespace GZipTest
             if (Displayed) return;
             string p = string.Format("Progress... {0}%", CurrentBlock * 100 / BlocksNumber);
             Console.Write(p + "\r");
-        }
-
-        protected void JoinAll()
-        {
-            for (int i = 0; i < ThreadCount; i++)
-            {
-                ProcessingReady[i].Set();
-            }
         }
 
         protected abstract byte[] ReadBlock(int n);
