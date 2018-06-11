@@ -8,7 +8,6 @@ namespace GZipTest
 {
     abstract class GZip
     {
-        protected int BlocksNumber = 1;
         protected static int MaxBlocks = 100;
         protected const int BlockSize = 10000000;
         protected static int ThreadCount = Environment.ProcessorCount;
@@ -22,13 +21,15 @@ namespace GZipTest
         protected volatile bool Displayed = false;
         protected object InLocker = new object();
         protected object OutLocker = new object();
+        protected object ProgressLocker = new object();
         protected AutoResetEvent[] ProcessingReady = new AutoResetEvent[ThreadCount];
         protected AutoResetEvent[] Processed = new AutoResetEvent[ThreadCount];
         protected AutoResetEvent InputReady = new AutoResetEvent(false);
         protected Semaphore ResetIn = null;
         protected Thread TReader, PoolManager, TWriter;
         protected Stopwatch StartTime = null;
-        protected int CurrentBlock = 0;
+        protected long CurrentPosition = 0;
+        protected long FileSize;
 
         protected delegate void FatalException(Exception ex);
         protected event FatalException OnFatalException;
@@ -42,7 +43,7 @@ namespace GZipTest
             OutputPath = output;
             OnFatalException += GZip_OnFatalException;
             PerformanceCounter ramCounter = new PerformanceCounter("Memory", "Available MBytes");
-            int blocks = (int)(ramCounter.NextValue() * 200000 / BlockSize / ThreadCount);
+            int blocks = (int)(ramCounter.NextValue() * 500000 / BlockSize / ThreadCount);
             if (blocks < MaxBlocks) MaxBlocks = blocks;
             ResetIn = new Semaphore(MaxBlocks, MaxBlocks);
         }
@@ -91,7 +92,7 @@ namespace GZipTest
 
             using (InputStream = new FileStream(InputPath, FileMode.Open, FileAccess.Read, FileShare.Read))
             {
-                BlocksNumber = (int)(InputStream.Length / BlockSize) + 1;
+                FileSize = InputStream.Length;
 
                 while (InputStream.Position < InputStream.Length)
                 {
@@ -216,8 +217,7 @@ namespace GZipTest
                             }
 
                             OutputStream.Write(Block[n], 0, Block[n].Length);
-
-                            CurrentBlock++;
+                            
                             UpdateProgress();
                         }
                         catch (IOException ex)
@@ -271,7 +271,8 @@ namespace GZipTest
                     }
 
                     SpecifiedProcessBlock(n);
-                    
+
+                    lock (ProgressLocker) CurrentPosition += InputData[n].Length;
                     lock (InLocker) InputData[n] = null;
                     
                     Processed[n].Set();
@@ -292,7 +293,7 @@ namespace GZipTest
         protected void UpdateProgress()
         {
             if (Displayed) return;
-            string p = string.Format("Progress... {0}%", CurrentBlock * 100 / BlocksNumber);
+            string p = string.Format("Progress... {0}%", CurrentPosition * 100 / FileSize);
             Console.Write(p + "\r");
         }
 
