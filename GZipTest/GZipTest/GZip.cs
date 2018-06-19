@@ -90,8 +90,10 @@ namespace GZipTest
         {
             byte[][] Block = new byte[ThreadCount][];
 
-            using (InputStream = new FileStream(InputPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            try
             {
+                InputStream = new FileStream(InputPath, FileMode.Open, FileAccess.Read, FileShare.Read);
+            
                 FileSize = InputStream.Length;
 
                 while (InputStream.Position < InputStream.Length)
@@ -121,13 +123,22 @@ namespace GZipTest
                         InputReady.Set();
                     }
                 }
-            }
 
-            lock (InLocker)
+                lock (InLocker)
+                {
+                    InputQueue.Enqueue(null);
+                    Monitor.PulseAll(InLocker);
+                    InputReady.Set();
+                }
+            }
+            catch (Exception ex)
             {
-                InputQueue.Enqueue(null);
-                Monitor.PulseAll(InLocker);
-                InputReady.Set();
+                Displayed = true;
+                OnFatalException?.Invoke(ex);
+            }
+            finally
+            {
+                InputStream?.Close();
             }
 
             IsReading = false;
@@ -186,9 +197,12 @@ namespace GZipTest
         protected void Writer()
         {
             byte[][] Block = null;
+            FileStream OutputStream = null;
 
-            using (FileStream OutputStream = new FileStream(OutputPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
+            try
             {
+                OutputStream = new FileStream(OutputPath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+            
                 while (InWork)
                 {
                     lock (OutLocker)
@@ -246,6 +260,15 @@ namespace GZipTest
 
                     Block = null;
                 }
+            }
+            catch (Exception ex)
+            {
+                Displayed = true;
+                OnFatalException?.Invoke(ex);
+            }
+            finally
+            {
+                OutputStream?.Close();
             }
         }
 

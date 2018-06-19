@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 
 namespace GZipTest
 {
@@ -51,6 +52,12 @@ namespace GZipTest
             if (Mode.Equals("compress")) gz = new Compression(SrcFileName, DstFileName);
             else gz = new Decompression(SrcFileName, DstFileName);
             gz.Process();
+        }
+
+        static void UnhandledExceptionTrapper(object sender, UnhandledExceptionEventArgs e)
+        {
+            Display.ShowMessage(e.ExceptionObject.ToString());
+            Environment.Exit(1);
         }
     }
 }
